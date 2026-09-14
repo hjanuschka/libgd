@@ -60,7 +60,8 @@ GD has support for:
 * [XPM](https://en.wikipedia.org/wiki/X_PixMap)
   via [libXpm](http://xorg.freedesktop.org/)
 * [QOI] builtin support
-* [JXL] using libjxl
+* [JXL] using libjxl, or decode-only via [jxl-rs](https://github.com/libjxl/jxl-rs)
+  (Rust) with the `ENABLE_JXL_RS` build option
 * [UHDR] using libuhdr
 
 Besides that, GD depends on some external libraries, which are all optional

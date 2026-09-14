@@ -69,6 +69,8 @@
 /* Define if you have jxl */
 #cmakedefine HAVE_LIBJXL
 
+#cmakedefine HAVE_JXL_RS
+
 /* Define if you have xpm */
 #cmakedefine HAVE_LIBXPM
 

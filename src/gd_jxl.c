@@ -1685,6 +1685,124 @@ BGD_DECLARE(void) gdJxlReadClose(gdJxlReadPtr reader)
 
 #else /* !HAVE_LIBJXL */
 
+#ifdef HAVE_JXL_RS
+#include "gd_jxl_shim.h"
+#include <limits.h>
+
+#define GD_JXL_RS_ALLOC_STEP (4 * 1024)
+
+/* Slurp gdIOCtx into dynamic buffer (pattern from gd_webp.c) */
+static uint8_t *JxlRsReadCtxData(gdIOCtx *infile, size_t *size)
+{
+    uint8_t *filedata = NULL, *temp, *read;
+    ssize_t n;
+
+    *size = 0;
+    do {
+        temp = gdRealloc(filedata, *size + GD_JXL_RS_ALLOC_STEP);
+        if (temp == NULL) {
+            gdFree(filedata);
+            gd_error("gd-jxl: realloc failed");
+            return NULL;
+        }
+        filedata = temp;
+        read = temp + *size;
+        n = gdGetBuf(read, GD_JXL_RS_ALLOC_STEP, infile);
+        if (n > 0 && n != EOF) {
+            *size += n;
+        }
+    } while (n > 0 && n != EOF);
+
+    if (*size == 0) {
+        gdFree(filedata);
+        return NULL;
+    }
+
+    return filedata;
+}
+
+/* JXL alpha: 0 transparent, 255 opaque. GD: 127 transparent, 0 opaque. */
+static int JxlRsAlphaToGd(uint8_t jxl_alpha) { return gdAlphaMax - (jxl_alpha >> 1); }
+
+BGD_DECLARE(gdImagePtr) gdImageCreateFromJxl(FILE *inFile)
+{
+    gdImagePtr im;
+    gdIOCtx *in = gdNewFileCtx(inFile);
+    if (!in) {
+        return NULL;
+    }
+    im = gdImageCreateFromJxlCtx(in);
+    in->gd_free(in);
+    return im;
+}
+
+BGD_DECLARE(gdImagePtr) gdImageCreateFromJxlPtr(int size, void *data)
+{
+    gdImagePtr im;
+    gdIOCtx *in;
+
+    if (size <= 0 || data == NULL) {
+        return NULL;
+    }
+    in = gdNewDynamicCtxEx(size, data, 0);
+    if (!in) {
+        return NULL;
+    }
+    im = gdImageCreateFromJxlCtx(in);
+    in->gd_free(in);
+    return im;
+}
+
+BGD_DECLARE(gdImagePtr) gdImageCreateFromJxlCtx(gdIOCtx *infile)
+{
+    uint8_t *filedata = NULL;
+    uint8_t *rgba = NULL;
+    size_t size = 0;
+    uint32_t width = 0, height = 0;
+    const uint8_t *p;
+    gdImagePtr im;
+    int x, y;
+
+    filedata = JxlRsReadCtxData(infile, &size);
+    if (filedata == NULL) {
+        gd_error("gd-jxl: could not read data");
+        return NULL;
+    }
+
+    if (gd_jxl_decode(filedata, size, &rgba, &width, &height) != GD_JXL_OK) {
+        gd_error("gd-jxl: could not decode image");
+        gdFree(filedata);
+        return NULL;
+    }
+    gdFree(filedata);
+
+    if (width == 0 || height == 0 || width > INT_MAX || height > INT_MAX) {
+        gd_jxl_free(rgba, width, height);
+        return NULL;
+    }
+
+    im = gdImageCreateTrueColor((int)width, (int)height);
+    if (im == NULL) {
+        gd_jxl_free(rgba, width, height);
+        return NULL;
+    }
+    gdImageAlphaBlending(im, 0);
+    gdImageSaveAlpha(im, 1);
+    for (y = 0, p = rgba; y < (int)height; y++) {
+        for (x = 0; x < (int)width; x++) {
+            uint8_t r = *(p++);
+            uint8_t g = *(p++);
+            uint8_t b = *(p++);
+            uint8_t a = *(p++);
+            im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, JxlRsAlphaToGd(a));
+        }
+    }
+    gd_jxl_free(rgba, width, height);
+    return im;
+}
+
+#endif /* HAVE_JXL_RS */
+
 static void _noJxlError(void) { gd_error("JXL image support has been disabled\n"); }
 
 BGD_DECLARE(void) gdJxlReadOptionsInit(gdJxlReadOptions *options)
@@ -1716,6 +1834,7 @@ BGD_DECLARE(void) gdJxlAnimWriteOptionsInit(gdJxlAnimWriteOptions *options)
     options->effort = 7;
 }
 
+#ifndef HAVE_JXL_RS
 BGD_DECLARE(gdImagePtr) gdImageCreateFromJxl(FILE *inFile)
 {
     ARG_NOT_USED(inFile);
@@ -1737,6 +1856,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromJxlCtx(gdIOCtx *infile)
     _noJxlError();
     return NULL;
 }
+#endif /* !HAVE_JXL_RS */
 
 BGD_DECLARE(void) gdImageJxl(gdImagePtr im, FILE *outFile)
 {
